@@ -55,7 +55,7 @@ class OrderService{
 
                     $totalPrice += $productVariant->product->price * $cartItem->quantity;
                 }
-                
+
                 $order = $this->orderRepository->createOrder($user, $totalPrice,$location->id);
 
                 foreach ($cartItems as $cartItem) {
@@ -106,7 +106,7 @@ class OrderService{
         try{
             DB::beginTransaction();
                 $order=Order::lockForUpdate()->find($paymentIntent->metadata->order_id);
-                $this->releaseReservedStock($order->orderItems);
+                $this->releaseReservedStock($order->orderItems,true);
                 $this->orderRepository->updateOrder($order,"paid");
                 $this->orderRepository->updatePaymentRecord($order,"success",null);
             DB::commit();
@@ -124,7 +124,7 @@ class OrderService{
         try{
             DB::beginTransaction();
                 $order=Order::lockForUpdate()->find($paymentIntent->metadata->order_id);
-                $this->releaseReservedStock($order->orderItems);               
+                $this->releaseReservedStock($order->orderItems,false);               
                 $this->orderRepository->updateOrder($order,"failed");
                 $this->orderRepository->updatePaymentRecord($order,"failed",$paymentIntent->last_payment_error->message);
             DB::commit();
@@ -142,7 +142,7 @@ class OrderService{
         try{
             DB::beginTransaction();
                 $order=Order::lockForUpdate()->find($paymentIntent->order_id);
-                $this->releaseReservedStock($order->orderItems);
+                $this->releaseReservedStock($order->orderItems,false);
                 $this->orderRepository->updateOrder($order,"cancelled");
                 $this->orderRepository->updatePaymentRecord($order,"cancelled","Stripe cancelled");
             DB::commit();
@@ -221,7 +221,7 @@ class OrderService{
                 }
 
                 $this->orderRepository->updateOrder($order,"cancelled");
-                $this->releaseReservedStock($order->orderItems);
+                $this->releaseReservedStock($order->orderItems,false);
                 $paymentRecord=$this->orderRepository->getPaymentRecord($order);
                 $this->orderRepository->updatePaymentRecord($order,"cancelled","User cancelled");
                 $paymentIntent=PaymentIntent::retrieve($paymentRecord->stripe_payment_intent_id);
@@ -253,12 +253,16 @@ class OrderService{
     }
 
     /*******/
-    public function releaseReservedStock($orderItems)
+    public function releaseReservedStock($orderItems,$status)
     {
         foreach($orderItems as $orderItem)
         {
             $productVariant=ProductVariant::find($orderItem->product_variant_id);
             $productVariant->decrement("total_reserved_stock",$orderItem->quantity);
+            if($status)
+            {
+                $productVariant->decrement("total_stock",$orderItem->quantity);
+            }
         }                
     }
 }
